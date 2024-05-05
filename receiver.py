@@ -1,11 +1,10 @@
 # receiver.py (Party P_B)
 import socket
 import json
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
+import hmac
+import hashlib
 
-# Decrypt a single gate using the input keys
+# Decrypt a single gate using the input keys and HMAC
 def decrypt_gate(garbled_gate, input_key1, input_key2):
     """
     Decrypts a garbled gate output using the given input keys.
@@ -18,19 +17,12 @@ def decrypt_gate(garbled_gate, input_key1, input_key2):
     Returns:
         decrypted_value: The decrypted value of the gate output.
     """
-    derived_key = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=16,
-        salt=input_key1 + input_key2,
-        iterations=100000
-    ).derive(input_key1 + input_key2)
-
-    cipher = Cipher(algorithms.AES(derived_key), modes.ECB())
-    decryptor = cipher.decryptor()
+    # Create a derived key using HMAC
+    derived_key = hmac.new(input_key1 + input_key2, input_key1 + input_key2, hashlib.sha256).digest()
 
     for encrypted_output in garbled_gate:
         try:
-            decrypted_value = decryptor.update(bytes.fromhex(encrypted_output)) + decryptor.finalize()
+            decrypted_value = hmac.new(derived_key, bytes.fromhex(encrypted_output), hashlib.sha256).digest()
             return decrypted_value
         except Exception:
             continue
@@ -74,11 +66,9 @@ def decrypt_output(encrypted_output, output_keys):
         clear_value: The clear value of the output, either 0 or 1.
     """
     for i, key in enumerate(output_keys):
-        cipher = Cipher(algorithms.AES(key), modes.ECB())
-        decryptor = cipher.decryptor()
-
+        derived_key = hmac.new(key, key, hashlib.sha256).digest()
         try:
-            decrypted_value = decryptor.update(encrypted_output) + decryptor.finalize()
+            decrypted_value = hmac.new(derived_key, encrypted_output, hashlib.sha256).digest()
             return i  # Return 0 or 1 based on the correct decryption
         except Exception:
             continue

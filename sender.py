@@ -1,9 +1,8 @@
 # sender.py (Party P_A)
 import socket
 import json
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import hmac
+import hashlib
 import os
 
 # Generate encryption keys for wires (0 and 1)
@@ -19,7 +18,7 @@ def generate_wire_keys():
     print(f"Generated wire keys: Key 0 = {key_0.hex()}, Key 1 = {key_1.hex()}")
     return key_0, key_1
 
-# Encrypt a gate based on input wire values
+# Encrypt a gate based on input wire values using HMAC
 def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
     """
     Encrypts the gate output for all possible combinations of input keys.
@@ -39,16 +38,9 @@ def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
             wc = wa & wb  # AND gate logic
             output_key = output_key_0 if wc == 0 else output_key_1
 
-            derived_key = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=16,
-                salt=input_key1 + input_key2,
-                iterations=100000
-            ).derive(output_key)
-
-            cipher = Cipher(algorithms.AES(derived_key), modes.ECB())
-            encryptor = cipher.encryptor()
-            encrypted_value = encryptor.update(output_key) + encryptor.finalize()
+            # Use HMAC for encryption
+            derived_key = hmac.new(input_key1 + input_key2, output_key, hashlib.sha256).digest()
+            encrypted_value = hmac.new(derived_key, output_key, hashlib.sha256).digest()
             encrypted_gate.append(encrypted_value.hex())
 
             print(f"Encrypted gate output for inputs (wa={wa}, wb={wb}): {encrypted_value.hex()}")

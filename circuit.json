@@ -1,0 +1,15 @@
+{
+    "gates": [
+      {
+        "type": "AND",
+        "inputs": ["i1", "i2"],
+        "output": "o1"
+      },
+      {
+        "type": "OR",
+        "inputs": ["i1", "o1"],
+        "output": "o2"
+      }
+    ]
+  }
+  

@@ -138,7 +138,5 @@ def receive_garbled_circuit(host="localhost", port=9999):
             # Print the clear value of the final output
             print("Final Output (Clear Value):", clear_value)
 
-            print("Final Output (Clear Value):", clear_value)
-
 if __name__ == "__main__":
     receive_garbled_circuit()

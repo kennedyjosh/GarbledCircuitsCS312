@@ -4,27 +4,6 @@ import json
 from run_garbled_circuit import simple_hash
 import os
 
-# Generate encryption keys for wires (0 and 1)
-def generate_wire_keys():
-    """
-    Generates two random wire keys.
-
-    This function generates two random wire keys using the os.urandom() function.
-    Each wire key is a 16-byte (128-bit) random value.
-
-    Returns:
-        key_0, key_1: A tuple containing two randomly generated wire keys.
-    """
-    # Generate a random 16-byte key for wire 0
-    key_0 = os.urandom(16)
-
-    # Generate a random 16-byte key for wire 1
-    key_1 = os.urandom(16)
-    print(f"Generated wire keys: Key 0 = {key_0.hex()}, Key 1 = {key_1.hex()}")
-
-    # Return the generated wire keys as a tuple
-    return key_0, key_1
-
 # Encrypt a gate based on input wire values
 def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
     """
@@ -69,7 +48,7 @@ def garble_circuit(input_A, input_B):
     """
     print("Garbling circuit...")
     # Set the input values
-    input_keys_A = [b'\x00'*15 + bytes([input_A]), os.urandom(16)]  # Ensuring clear distinction
+    input_keys_A = [b'\x00'*15 + bytes([input_A]), os.urandom(16)]
     input_keys_B = [b'\x00'*15 + bytes([input_B]), os.urandom(16)]
     # Generate gate keys for gate G1
     gate_keys = [os.urandom(16), os.urandom(16)]

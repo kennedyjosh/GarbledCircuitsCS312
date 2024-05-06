@@ -2,6 +2,15 @@
 import subprocess
 import threading
 import time
+import hashlib
+
+def simple_hash(data):
+    """
+    Generate a simple hash using SHA-256.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(data)
+    return hasher.digest()
 
 # Run receiver in a separate thread
 def run_receiver():

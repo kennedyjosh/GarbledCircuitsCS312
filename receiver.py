@@ -1,8 +1,7 @@
 # receiver.py (Party P_B)
 import socket
 import json
-import hmac
-import hashlib
+from run_garbled_circuit import simple_hash
 
 # Decrypt a single gate using the input keys and HMAC
 def decrypt_gate(garbled_gate, input_key1, input_key2):
@@ -15,26 +14,12 @@ def decrypt_gate(garbled_gate, input_key1, input_key2):
         input_key2 (bytes): The second input key.
 
     Returns:
-        decrypted_value (bytes): The decrypted value of the gate output.
-
-    Raises:
-        ValueError: If decryption fails for all encrypted outputs.
+        decrypted_value: The decrypted value of the gate output.
     """
-    # Create a derived key using HMAC
-    derived_key = hmac.new(input_key1 + input_key2, input_key1 + input_key2, hashlib.sha256).digest()
-
-    # Iterate over each encrypted output
-    for encrypted_output in garbled_gate:
-        try:
-            # Decrypt the encrypted output using the derived key
-            decrypted_value = hmac.new(derived_key, bytes.fromhex(encrypted_output), hashlib.sha256).digest()
-            return decrypted_value
-        except Exception:
-            # If decryption fails, continue
-            continue
-
-    # If decryption fails, raise an exception
-    raise ValueError("Decryption failed.")
+    index = (int.from_bytes(input_key1, 'big') << 1) | int.from_bytes(input_key2, 'big')
+    decrypted_value = bytes.fromhex(garbled_gate[index])
+    print(f"Decrypting gate index={index}: Resulting hash={decrypted_value.hex()}")
+    return decrypted_value
 
 # Evaluate the garbled circuit
 def evaluate_circuit(garbled_circuit, input_keys):
@@ -83,21 +68,21 @@ def decrypt_output(encrypted_output, output_keys):
     Returns:
         clear_value: The clear value of the output, either 0 or 1.
     """
-    # Iterate over each output key and try to decrypt the encrypted output
-    for i, key in enumerate(output_keys):
-        # Create a derived key using HMAC
-        derived_key = hmac.new(key, key, hashlib.sha256).digest()
-        try:
-            # Decrypt the encrypted output using the derived key
-            decrypted_value = hmac.new(derived_key, encrypted_output, hashlib.sha256).digest()
-            return i  # Return 0 or 1 based on the correct decryption
-        except Exception:
-            # If decryption fails, continue
-            continue
+    hash0 = simple_hash(bytes.fromhex(output_keys[0]))
+    hash1 = simple_hash(bytes.fromhex(output_keys[1]))
 
-    # If decryption fails, raise an exception
-    raise ValueError("Decryption of final output failed.")
+    print(f"Hash of output key 0: {hash0.hex()}")
+    print(f"Hash of output key 1: {hash1.hex()}")
+    # Return 0 or 1 based on the correct decryption
+    if encrypted_output == hash0:
+        return 0
+    elif encrypted_output == hash1:
+        return 1
+    else:
+        # If decryption fails, raise an exception
+        raise ValueError("Decryption of final output failed.")
 
+    
 # Receive garbled circuit from sender and evaluate
 def receive_garbled_circuit(host="localhost", port=9999):
     """
@@ -126,7 +111,7 @@ def receive_garbled_circuit(host="localhost", port=9999):
             }
 
             # Extract the output keys from the received garbled circuit
-            output_keys = [bytes.fromhex(key) for key in garbled_circuit["outputs"]["G1"]]
+            output_keys = garbled_circuit["outputs"]["G1"]
 
             # Evaluate the garbled circuit using the input keys
             results = evaluate_circuit(garbled_circuit, input_keys)

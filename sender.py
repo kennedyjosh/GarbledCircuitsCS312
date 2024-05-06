@@ -1,8 +1,7 @@
 # sender.py (Party P_A)
 import socket
 import json
-import hmac
-import hashlib
+from run_garbled_circuit import simple_hash
 import os
 
 # Generate encryption keys for wires (0 and 1)
@@ -26,7 +25,7 @@ def generate_wire_keys():
     # Return the generated wire keys as a tuple
     return key_0, key_1
 
-# Encrypt a gate based on input wire values using HMAC
+# Encrypt a gate based on input wire values
 def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
     """
     Encrypts the gate output for all possible combinations of input keys.
@@ -42,47 +41,44 @@ def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
     """
     # Initialize an empty list to store the encrypted gate values
     encrypted_gate = []
+    combinations = [(0, 0), (0, 1), (1, 0), (1, 1)]
     # Iterate over all possible combinations of inputs (wa and wb)
-    for wa in [0, 1]:
-        for wb in [0, 1]:
-            wc = wa & wb  # AND gate logic
-            # Determine the output key based on the value of wc
-            output_key = output_key_0 if wc == 0 else output_key_1
+    for wa, wb in combinations:
+        wc = wa & wb  # AND gate logic
+        # Determine the output key based on the value of wc
+        output_key = output_key_1 if wc == 1 else output_key_0
+        hashed_output = simple_hash(output_key)
+        # Convert the encrypted value to its hexadecimal representation and append it to the list
+        encrypted_gate.append(hashed_output.hex())
+        print(f"Encrypting inputs (wa={wa}, wb={wb}): Using output key={output_key.hex()} results in hash={hashed_output.hex()}")
 
-            # Use HMAC for encryption
-            derived_key = hmac.new(input_key1 + input_key2, output_key, hashlib.sha256).digest()
-            encrypted_value = hmac.new(derived_key, output_key, hashlib.sha256).digest()
-            # Convert the encrypted value to its hexadecimal representation and append it to the list
-            encrypted_gate.append(encrypted_value.hex())
-
-            print(f"Encrypted gate output for inputs (wa={wa}, wb={wb}): {encrypted_value.hex()}")
-            
     # Return the list of encrypted gate values
     return encrypted_gate
 
 # Garble the circuit
-def garble_circuit():
+def garble_circuit(input_A, input_B):
     """
     Garbles the circuit by generating garbled gates and keys for input wires.
+
+    Args:
+        input_A (int): The value of input wire A (0 or 1).
+        input_B (int): The value of input wire B (0 or 1).
 
     Returns:
         garbled_circuit: A dictionary representing the garbled circuit, containing the garbled gates and input keys.
     """
     print("Garbling circuit...")
-
-    # Generate input keys for wires A and B
-    input_keys = {
-        "A": generate_wire_keys(),
-        "B": generate_wire_keys()
-    }
-
+    # Set the input values
+    input_keys_A = [b'\x00'*15 + bytes([input_A]), os.urandom(16)]  # Ensuring clear distinction
+    input_keys_B = [b'\x00'*15 + bytes([input_B]), os.urandom(16)]
     # Generate gate keys for gate G1
-    gate_keys = {
-        "G1": generate_wire_keys()
-    }
+    gate_keys = [os.urandom(16), os.urandom(16)]
+
+    print(f"Input A keys: {input_keys_A[0].hex()}, {input_keys_A[1].hex()}")
+    print(f"Input B keys: {input_keys_B[0].hex()}, {input_keys_B[1].hex()}")
 
     # Encrypt gate G1 using input keys and gate keys
-    garbled_gate = encrypt_gate(input_keys["A"][0], input_keys["B"][0], gate_keys["G1"][0], gate_keys["G1"][1])
+    garbled_gate = encrypt_gate(input_keys_A[0], input_keys_B[0], gate_keys[0], gate_keys[1])
 
     # Create the garbled circuit dictionary
     garbled_circuit = {
@@ -90,11 +86,11 @@ def garble_circuit():
             "G1": garbled_gate
         },
         "inputs": {
-            "A": [key.hex() for key in input_keys["A"]],
-            "B": [key.hex() for key in input_keys["B"]]
+            "A": [key.hex() for key in input_keys_A],  # Ensure both input keys are converted to hex
+            "B": [key.hex() for key in input_keys_B]
         },
         "outputs": {
-            "G1": [key.hex() for key in gate_keys["G1"]]
+            "G1": [key.hex() for key in gate_keys]  # Convert gate output keys to hex
         }
     }
 
@@ -103,16 +99,18 @@ def garble_circuit():
     return garbled_circuit
 
 # Send garbled circuit to receiver
-def send_garbled_circuit(host="localhost", port=9999):
+def send_garbled_circuit(input_A, input_B, host="localhost", port=9999):
     """
     Sends a garbled circuit to a receiver.
 
     Args:
+        input_A (int): The value of input wire A (0 or 1).
+        input_B (int): The value of input wire B (0 or 1).
         host (str): The host address of the receiver. Defaults to "localhost".
         port (int): The port number of the receiver. Defaults to 9999.
     """
     # Generate the garbled circuit
-    circuit = garble_circuit()
+    circuit = garble_circuit(input_A, input_B)
 
     # Serialize the circuit data
     serialized_data = json.dumps(circuit)
@@ -126,4 +124,6 @@ def send_garbled_circuit(host="localhost", port=9999):
     print("Garbled circuit sent.")
 
 if __name__ == "__main__":
-    send_garbled_circuit()
+    input_A = int(input("Enter the value for input A (0 or 1): "))
+    input_B = int(input("Enter the value for input B (0 or 1): "))
+    send_garbled_circuit(input_A, input_B)

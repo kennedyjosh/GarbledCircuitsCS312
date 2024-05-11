@@ -38,7 +38,7 @@ def run(receiver_input, host="localhost", port=9999):
     Receives a garbled circuit from the sender and evaluates it.
 
     Args:
-        receiver_input: 0 or 1; the input that the receiver intends to choose
+        receiver_input: 0 or 1; the intended input for the receiver
         host (str): The host address to listen on. Defaults to "localhost".
         port (int): The port number to listen on. Defaults to 9999.
     """

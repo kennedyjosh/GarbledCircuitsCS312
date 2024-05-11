@@ -14,12 +14,12 @@ SUFFIX_LEN = 10
 def encrypt(a: bytes, b: bytes, out: bytes):
     """
     Encrypts a single row in a truth table where `a` and `b` are the inputs and `out` is the output.
-    To decrypt the `enc_out` returned by this function, you would need both `enc_a` and `enc_b`
+    To decrypt the `enc_out` returned by this function, you would need both `a` and `b`
 
     Args:
-        a: bytes
-        b: bytes
-        out: bytes
+        a: a 32-length key corresponding to the first input
+        b: a 32-length key corresponding to the second input
+        out: bytes representing the output (this will be the result post-decryption)
 
     Returns:
         enc_out: the doubly-encrypted output of the row
@@ -39,8 +39,6 @@ def encrypt_gate(truth_table: list[tuple]):
                      describes a row in the truth table of the gate
 
     Returns:
-        enc_truth_table: list of tuples where each tuple in the format (encrypted_input1, enc
-
         enc_zero: encrypted input key for 0
         enc_one: encrypted input key for 1
         encrypted_gate: A list of encrypted gate outputs for all possible combinations of input keys.
@@ -73,13 +71,12 @@ def garble_circuit():
 
 def run(sender_input, host="localhost", port=9999):
     """
-    Sends a garbled circuit to a receiver.
+    Constructs and sends a garbled circuit to a receiver.
 
     Args:
-        input_A (int): The value of input wire A (0 or 1).
-        input_B (int): The value of input wire B (0 or 1).
-        host (str): The host address of the receiver. Defaults to "localhost".
-        port (int): The port number of the receiver. Defaults to 9999.
+        sender_input: 0 or 1; the intended input for the sender
+        host (str): The host address to listen on. Defaults to "localhost".
+        port (int): The port number to listen on. Defaults to 9999.
     """
     # TODO: this is just a single "and" gate, for now
     # Generate the garbled gate
@@ -112,6 +109,7 @@ def run(sender_input, host="localhost", port=9999):
         # Send the serialized circuit data
         s.sendall(serialized_data)
     print(f"[{ME}] Garbled circuit sent.")
+
 
 if __name__ == "__main__":
     run(int(input("Enter the value for the sender's input (0 or 1): ")))

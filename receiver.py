@@ -1,5 +1,6 @@
 # receiver.py (Party P_B)
 from cryptography.fernet import Fernet, InvalidToken
+import otc
 import pickle
 import socket
 
@@ -42,32 +43,53 @@ def run(receiver_input, host="localhost", port=9999):
         host (str): The host address to listen on. Defaults to "localhost".
         port (int): The port number to listen on. Defaults to 9999.
     """
-    print(f"[{ME}] Waiting to receive garbled circuit...")
+    print(f"[{ME}] Waiting to receive connection from sender...")
     # Create a server socket and start listening for connections
     with socket.create_server((host, port)) as server:
-        # Accept a connection from sender
+        # Accept initial connection from sender
         connection, _ = server.accept()
         with connection:
-            # Receive the garbled circuit data from the sender and deserialize it
-            received_data = connection.recv(4096)
-            garbled_circuit = pickle.loads(received_data)
-            print(f"[{ME}] Garbled circuit received.")
+            # First message from sender contains the public key for OT
+            serialized_data = connection.recv(4096)
+            data = pickle.loads(serialized_data)
+            pub_key = data["pub_key"]
+            print(f"[{ME}] Public key received.")
 
-            # TODO: this should be done using oblivious transfer
-            # From the encrypted inputs sent by sender, choose the one that corresponds to receiver input
-            inputs = garbled_circuit["receiver_inputs"]
-            print(f"[{ME}] Possible inputs 0, 1: {[i[-SUFFIX_LEN:] for i in inputs]}")
-            enc_input = inputs[0] if receiver_input == 0 else inputs[1]
-            print(f"[{ME}] Choose encrypted input: {enc_input[-SUFFIX_LEN:]}")
+            # Initialize OT and respond to sender with desired input
+            # Note that sender will not be able to deduce the input the receivers wants due to OT properties
+            r = otc.receive()
+            input_selection = r.query(pub_key, receiver_input)
+
+            # Send this response back to the sender
+            serialized_data = pickle.dumps({"selection": input_selection})
+            connection.sendall(serialized_data)
+            print(f"[{ME}] Selection ({receiver_input}) sent")
+
+            # Receive the inputs and the garbled circuit from the sender
+            # Receiver now has enough info to decrypt both
+            serialized_data = b''
+            while serialized_data == b'':
+                serialized_data = connection.recv(4096)
+            data = pickle.loads(serialized_data)
+            garbled_circuit = data["garbled_circuit"]
+            # otc only allows the inputs to be of length 16, but the Fernet keys are length 44
+            # so we will have to reconstruct them after decryption
+            inputs = (data[1], data[2], data[3])
+            input_size = data["input_size"]
+            print(f"[{ME}] Received and parsed inputs and garbled circuit from sender")
+
+            # Decrypt the receiver input and reconstruct the full key
+            enc_input = b''
+            for sub_input in inputs:
+                sub_enc_input = r.elect(pub_key, receiver_input, *sub_input)
+                enc_input += sub_enc_input
+            enc_input = enc_input[:input_size]
+            print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
 
             # Try to decrypt from the rows the sender sent
-            output = try_decrypt(enc_input, garbled_circuit["encrypted_rows"])
+            output = try_decrypt(enc_input, garbled_circuit)
             if output is None:
                 print(f"[{ME}] Failed to decrypt")
             else:
                 print(f"[{ME}] Decrypted output: {output}")
-
-
-if __name__ == "__main__":
-    run(int(input("Enter the value for the receiver's input (0 or 1): ")))
 

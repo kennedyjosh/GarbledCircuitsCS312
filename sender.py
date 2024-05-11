@@ -1,5 +1,6 @@
 # sender.py (Party P_A)
 from cryptography.fernet import Fernet, InvalidToken
+import otc
 import pickle
 import random
 import socket
@@ -65,6 +66,7 @@ def garble_circuit():
     TODO
     This function will have to take in some circuit and garble each gate
     while keeping track of how each element is linked together.
+<<<<<<< HEAD
     """
     raise NotImplementedError
 
@@ -95,22 +97,37 @@ def run(sender_input, host="localhost", port=9999):
         except InvalidToken:
             continue
 
-    # Serialize the circuit data
-    data = {
-        "receiver_inputs": [enc_zero, enc_one],
-        "encrypted_rows": enc_rows_to_send
-    }
-    serialized_data = pickle.dumps(data)
+    # Initialize oblivious transfer protocol
+    s = otc.send()
 
-    print(f"[{ME}] Sending garbled circuit to receiver...")
+    print(f"[{ME}] Initiating contact with the receiver...")
 
     # Create a socket connection to the receiver
-    with socket.create_connection((host, port)) as s:
-        # Send the serialized circuit data
-        s.sendall(serialized_data)
-    print(f"[{ME}] Garbled circuit sent.")
+    with socket.create_connection((host, port)) as server:
+        # Send the public key to initiate OT
+        serialized_data = pickle.dumps({"pub_key": s.public})
+        server.sendall(serialized_data)
 
-
-if __name__ == "__main__":
-    run(int(input("Enter the value for the sender's input (0 or 1): ")))
+        # Receive response from receiver with their requested input
+        # Note that sender cannot deduce which input the receiver selected due to OT properties
+        serialized_data = b''
+        while serialized_data == b'':
+            serialized_data = server.recv(4096)
+        data = pickle.loads(serialized_data)
+        # Reply with both inputs, only one of which the receiver will be able to decrypt
+        # Since this is the last message, also send the garbled circuit
+        data = {
+            # the otc library dictates that the inputs must be of length 16
+            # since the Fernet keys are of length 44, we must send it in parts
+            # since 44 is not divisible by 16 we must also add arbitrary data to the end of the last part
+            # the receiver can concatenate these 3 messages and then trim to input_size to get the full key
+            1: s.reply(data["selection"], enc_zero[:16], enc_one[:16]),
+            2: s.reply(data["selection"], enc_zero[16:32], enc_one[16:32]),
+            3: s.reply(data["selection"], enc_zero[32:] + b'1234', enc_one[32:] + b'1234'),
+            "input_size": 44,
+            "garbled_circuit": enc_rows_to_send
+        }
+        serialized_data = pickle.dumps(data)
+        server.sendall(serialized_data)
+        print(f"[{ME}] Garbled circuit and receiver inputs sent.")
 

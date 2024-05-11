@@ -1,7 +1,6 @@
 # run_garbled_circuit.py
 import receiver
 import sender
-import subprocess
 from threading import Thread
 import time
 

@@ -1,18 +1,11 @@
 # run_garbled_circuit.py
+import receiver
+import sender
 import subprocess
-import threading
+from threading import Thread
 import time
-import hashlib
 
-def simple_hash(data):
-    """
-    Generate a simple hash using SHA-256.
-    """
-    hasher = hashlib.sha256()
-    hasher.update(data)
-    return hasher.digest()
 
-# Run receiver in a separate thread
 def run_receiver():
     """
     Runs the receiver script.
@@ -20,23 +13,29 @@ def run_receiver():
     print("Starting receiver...")
     subprocess.run(["python", "receiver.py"])
 
-# Run sender in the main thread after a short delay
+
 def run_sender():
     """
-    Runs the sender program after a delay of 1 second.
+    Runs the sender script.
     """
-    time.sleep(1)
     print("Starting sender...")
     subprocess.run(["python", "sender.py"])
 
+
 if __name__ == "__main__":
-    # Create a thread to start the receiver first
-    receiver_thread = threading.Thread(target=run_receiver)
+    # Choose inputs
+    sender_input = int(input("Enter the value for the sender's input (0 or 1): "))
+    receiver_input = int(input("Enter the value for the receiver's input (0 or 1): "))
+
+    # Create a thread to start the receiver process first
+    receiver_thread = Thread(target=receiver.run, args=(receiver_input,))
     receiver_thread.start()
 
-    # Execute the sender
-    run_sender()
+    # Wait a second, then start the sender process
+    time.sleep(1)
+    sender.run(sender_input)
 
     # Wait for the receiver thread to finish
     receiver_thread.join()
     print("Garbled circuit process completed.")
+

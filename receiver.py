@@ -1,127 +1,73 @@
 # receiver.py (Party P_B)
+from cryptography.fernet import Fernet, InvalidToken
+import pickle
 import socket
-import json
-from run_garbled_circuit import simple_hash
 
-# Decrypt a single gate using the input keys and HMAC
-def decrypt_gate(garbled_gate, input_key1, input_key2):
+
+# ID for printed logs coming from this file
+ME = "RECEIVER"
+# For long encrypted values, just print the suffix of defined length
+SUFFIX_LEN = 10
+
+
+def try_decrypt(enc_input, enc_rows):
     """
-    Decrypts a garbled gate output using the given input keys.
+    Try and decrypt a row using the receiver's input.
 
     Args:
-        garbled_gate (list): The list of encrypted gate outputs.
-        input_key1 (bytes): The first input key.
-        input_key2 (bytes): The second input key.
+        enc_input: the encrypted input key which should decrypt a single row
+        enc_rows: encrypted rows to try and decrypt
 
     Returns:
-        decrypted_value: The decrypted value of the gate output.
+        the decrypted output if one of the rows can be successfully decrypted, None otherwise
     """
-    index = (int.from_bytes(input_key1, 'big') << 1) | int.from_bytes(input_key2, 'big')
-    decrypted_value = bytes.fromhex(garbled_gate[index])
-    print(f"Decrypting gate index={index}: Resulting hash={decrypted_value.hex()}")
-    return decrypted_value
-
-# Evaluate the garbled circuit
-def evaluate_circuit(garbled_circuit, input_keys):
-    """
-    Evaluates the garbled circuit using the provided input keys.
-
-    Args:
-        garbled_circuit (dict): The dictionary representing the garbled circuit.
-        input_keys (dict): The input keys for the circuit.
-
-    Returns:
-        gate_results: A dictionary containing the decrypted gate results.
-    """
-    # Extract the gates from the garbled circuit
-    gates = garbled_circuit["gates"]
-
-    # Create a dictionary to store the results of gate evaluations
-    gate_results = {}
-
-    print("Evaluating gate G1...")
-    
-    # Get the encrypted gate output and input keys
-    garbled_gate = gates["G1"]
-    input_key_a, input_key_b = input_keys["A"], input_keys["B"]
-
-    # Decrypt the gate output using the input keys
-    result = decrypt_gate(garbled_gate, input_key_a, input_key_b)
-
-    # Store the decrypted gate output in the results dictionary
-    gate_results["G1"] = result
-
-    print("Gate G1 evaluated successfully.")
-
-    # Return the dictionary of gate results
-    return gate_results
-
-# Decrypt the final output using known output keys
-def decrypt_output(encrypted_output, output_keys):
-    """
-    Decrypts the final garbled output to reveal the clear value (0 or 1).
-
-    Args:
-        encrypted_output (bytes): The encrypted output value.
-        output_keys (list): The list containing the two output keys for comparison.
-
-    Returns:
-        clear_value: The clear value of the output, either 0 or 1.
-    """
-    hash0 = simple_hash(bytes.fromhex(output_keys[0]))
-    hash1 = simple_hash(bytes.fromhex(output_keys[1]))
-
-    print(f"Hash of output key 0: {hash0.hex()}")
-    print(f"Hash of output key 1: {hash1.hex()}")
-    # Return 0 or 1 based on the correct decryption
-    if encrypted_output == hash0:
-        return 0
-    elif encrypted_output == hash1:
-        return 1
-    else:
-        # If decryption fails, raise an exception
-        raise ValueError("Decryption of final output failed.")
+    print(f"[{ME}] Trying to decrypt one of these encrypted rows: {[r[-SUFFIX_LEN:] for r in enc_rows]}")
+    for enc_row in enc_rows:
+        try:
+            output = Fernet(enc_input).decrypt(enc_row)
+            print(f"[{ME}] Successful decryption of row: {enc_row[-SUFFIX_LEN:]}")
+            return output
+        except InvalidToken:
+            continue
+    return None
 
     
 # Receive garbled circuit from sender and evaluate
-def receive_garbled_circuit(host="localhost", port=9999):
+def run(receiver_input, host="localhost", port=9999):
     """
     Receives a garbled circuit from the sender and evaluates it.
 
     Args:
+        receiver_input: 0 or 1; the input that the receiver intends to choose
         host (str): The host address to listen on. Defaults to "localhost".
         port (int): The port number to listen on. Defaults to 9999.
     """
-    print("Waiting to receive garbled circuit...")
+    print(f"[{ME}] Waiting to receive garbled circuit...")
     # Create a server socket and start listening for connections
     with socket.create_server((host, port)) as server:
         # Accept a connection from sender
         connection, _ = server.accept()
         with connection:
-            # Receive the garbled circuit data from the sender
-            received_data = connection.recv(4096).decode("utf-8")
-            garbled_circuit = json.loads(received_data)
+            # Receive the garbled circuit data from the sender and deserialize it
+            received_data = connection.recv(4096)
+            garbled_circuit = pickle.loads(received_data)
+            print(f"[{ME}] Garbled circuit received.")
 
-            print("Garbled circuit received.")
+            # TODO: this should be done using oblivious transfer
+            # From the encrypted inputs sent by sender, choose the one that corresponds to receiver input
+            inputs = garbled_circuit["receiver_inputs"]
+            print(f"[{ME}] Possible inputs 0, 1: {[i[-SUFFIX_LEN:] for i in inputs]}")
+            enc_input = inputs[0] if receiver_input == 0 else inputs[1]
+            print(f"[{ME}] Choose encrypted input: {enc_input[-SUFFIX_LEN:]}")
 
-            # Extract the input keys from the received garbled circuit
-            input_keys = {
-                "A": bytes.fromhex(garbled_circuit["inputs"]["A"][0]),
-                "B": bytes.fromhex(garbled_circuit["inputs"]["B"][0])
-            }
+            # Try to decrypt from the rows the sender sent
+            output = try_decrypt(enc_input, garbled_circuit["encrypted_rows"])
+            if output is None:
+                print(f"[{ME}] Failed to decrypt")
+            else:
+                print(f"[{ME}] Decrypted output: {output}")
 
-            # Extract the output keys from the received garbled circuit
-            output_keys = garbled_circuit["outputs"]["G1"]
-
-            # Evaluate the garbled circuit using the input keys
-            results = evaluate_circuit(garbled_circuit, input_keys)
-            encrypted_output = results["G1"]
-
-            # Decrypt the final output to obtain the clear value
-            clear_value = decrypt_output(encrypted_output, output_keys)
-
-            # Print the clear value of the final output
-            print("Final Output (Clear Value):", clear_value)
 
 if __name__ == "__main__":
-    receive_garbled_circuit()
+    run(int(input("Enter the value for the receiver's input (0 or 1): ")))
+

@@ -6,22 +6,6 @@ from threading import Thread
 import time
 
 
-def run_receiver():
-    """
-    Runs the receiver script.
-    """
-    print("Starting receiver...")
-    subprocess.run(["python", "receiver.py"])
-
-
-def run_sender():
-    """
-    Runs the sender script.
-    """
-    print("Starting sender...")
-    subprocess.run(["python", "sender.py"])
-
-
 if __name__ == "__main__":
     # Choose inputs
     sender_input = int(input("Enter the value for the sender's input (0 or 1): "))

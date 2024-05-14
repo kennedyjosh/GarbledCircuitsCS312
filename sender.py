@@ -1,108 +1,116 @@
 # sender.py (Party P_A)
+from cryptography.fernet import Fernet, InvalidToken
+import pickle
+import random
 import socket
-import json
-from run_garbled_circuit import simple_hash
-import os
 
-# Encrypt a gate based on input wire values
-def encrypt_gate(input_key1, input_key2, output_key_0, output_key_1):
+
+# ID for printed logs coming from this file
+ME = "SENDER"
+# For long encrypted values, just print the suffix of defined length
+SUFFIX_LEN = 10
+
+
+def encrypt(a: bytes, b: bytes, out: bytes):
+    """
+    Encrypts a single row in a truth table where `a` and `b` are the inputs and `out` is the output.
+    To decrypt the `enc_out` returned by this function, you would need both `a` and `b`
+
+    Args:
+        a: a 32-length key corresponding to the first input
+        b: a 32-length key corresponding to the second input
+        out: bytes representing the output (this will be the result post-decryption)
+
+    Returns:
+        enc_out: the doubly-encrypted output of the row
+    """
+    assert type(a) is bytes
+    assert type(b) is bytes
+    assert type(out) is bytes
+    return Fernet(a).encrypt(Fernet(b).encrypt(out))
+
+
+def encrypt_gate(truth_table: list[tuple]):
     """
     Encrypts the gate output for all possible combinations of input keys.
 
     Args:
-        input_key1 (bytes): The first input key.
-        input_key2 (bytes): The second input key.
-        output_key_0 (bytes): The output key when the gate logic evaluates to 0.
-        output_key_1 (bytes): The output key when the gate logic evaluates to 1.
+        truth_table: list of tuples where each tuple in the format (input1, input2, output)
+                     describes a row in the truth table of the gate
 
     Returns:
+        enc_zero: encrypted input key for 0
+        enc_one: encrypted input key for 1
         encrypted_gate: A list of encrypted gate outputs for all possible combinations of input keys.
     """
-    # Initialize an empty list to store the encrypted gate values
-    encrypted_gate = []
-    combinations = [(0, 0), (0, 1), (1, 0), (1, 1)]
-    # Iterate over all possible combinations of inputs (wa and wb)
-    for wa, wb in combinations:
-        wc = wa & wb  # AND gate logic
-        # Determine the output key based on the value of wc
-        output_key = output_key_1 if wc == 1 else output_key_0
-        hashed_output = simple_hash(output_key)
-        # Convert the encrypted value to its hexadecimal representation and append it to the list
-        encrypted_gate.append(hashed_output.hex())
-        print(f"Encrypting inputs (wa={wa}, wb={wb}): Using output key={output_key.hex()} results in hash={hashed_output.hex()}")
+    # Initialize some variables
+    enc_zero = Fernet.generate_key()
+    enc_one = Fernet.generate_key()
+    encrypted_inputs = [enc_zero, enc_one]
+    encrypted_gate = []  # holds each encrypted row of truth table
+    # Iterate over and encrypt each row in the truth table
+    for wa, wb, wc in truth_table:
+        enc_a = encrypted_inputs[wa]
+        enc_b = encrypted_inputs[wb]
+        enc_row = encrypt(enc_a, enc_b, bytes(str(wc), encoding="utf-8"))
+        encrypted_gate.append(enc_row)
+        print(f"[{ME}] Encrypting inputs wa={wa}, wb={wb} | encrypted output row: {enc_row[-SUFFIX_LEN:]}")
+    # Shuffle the order of the encrypted rows, otherwise one can deduce the truth table by convention
+    random.shuffle(encrypted_gate)  # the shuffling occurs in-place
+    return enc_zero, enc_one, encrypted_gate
 
-    # Return the list of encrypted gate values
-    return encrypted_gate
 
-# Garble the circuit
-def garble_circuit(input_A, input_B):
+def garble_circuit():
     """
-    Garbles the circuit by generating garbled gates and keys for input wires.
+    TODO
+    This function will have to take in some circuit and garble each gate
+    while keeping track of how each element is linked together.
+    """
+    raise NotImplementedError
+
+
+def run(sender_input, host="localhost", port=9999):
+    """
+    Constructs and sends a garbled circuit to a receiver.
 
     Args:
-        input_A (int): The value of input wire A (0 or 1).
-        input_B (int): The value of input wire B (0 or 1).
-
-    Returns:
-        garbled_circuit: A dictionary representing the garbled circuit, containing the garbled gates and input keys.
+        sender_input: 0 or 1; the intended input for the sender
+        host (str): The host address to listen on. Defaults to "localhost".
+        port (int): The port number to listen on. Defaults to 9999.
     """
-    print("Garbling circuit...")
-    # Set the input values
-    input_keys_A = [b'\x00'*15 + bytes([input_A]), os.urandom(16)]
-    input_keys_B = [b'\x00'*15 + bytes([input_B]), os.urandom(16)]
-    # Generate gate keys for gate G1
-    gate_keys = [os.urandom(16), os.urandom(16)]
+    # TODO: this is just a single "and" gate, for now
+    # Generate the garbled gate
+    combinations = [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 1)]  # in the format (input1, input2, output)
+    enc_zero, enc_one, enc_gate = encrypt_gate(combinations)
 
-    print(f"Input A keys: {input_keys_A[0].hex()}, {input_keys_A[1].hex()}")
-    print(f"Input B keys: {input_keys_B[0].hex()}, {input_keys_B[1].hex()}")
-
-    # Encrypt gate G1 using input keys and gate keys
-    garbled_gate = encrypt_gate(input_keys_A[0], input_keys_B[0], gate_keys[0], gate_keys[1])
-
-    # Create the garbled circuit dictionary
-    garbled_circuit = {
-        "gates": {
-            "G1": garbled_gate
-        },
-        "inputs": {
-            "A": [key.hex() for key in input_keys_A],  # Ensure both input keys are converted to hex
-            "B": [key.hex() for key in input_keys_B]
-        },
-        "outputs": {
-            "G1": [key.hex() for key in gate_keys]  # Convert gate output keys to hex
-        }
-    }
-
-    # Print success message and return the garbled circuit
-    print("Circuit garbled successfully.")
-    return garbled_circuit
-
-# Send garbled circuit to receiver
-def send_garbled_circuit(input_A, input_B, host="localhost", port=9999):
-    """
-    Sends a garbled circuit to a receiver.
-
-    Args:
-        input_A (int): The value of input wire A (0 or 1).
-        input_B (int): The value of input wire B (0 or 1).
-        host (str): The host address of the receiver. Defaults to "localhost".
-        port (int): The port number of the receiver. Defaults to 9999.
-    """
-    # Generate the garbled circuit
-    circuit = garble_circuit(input_A, input_B)
+    # Partially decrypt the gate so that the receiver only needs their key
+    # For a simple truth table of 4 rows, only 2 will be possible for the receiver to complete
+    enc_sender_input = enc_zero if sender_input == 0 else enc_one
+    enc_rows_to_send = []
+    for enc_row in enc_gate:
+        try:
+            partial_decryption = Fernet(enc_sender_input).decrypt(enc_row)
+            enc_rows_to_send.append(partial_decryption)
+            print(f"[{ME}] Successful partial decryption of row {enc_row[-SUFFIX_LEN:]} to {partial_decryption[-SUFFIX_LEN:]}")
+        except InvalidToken:
+            continue
 
     # Serialize the circuit data
-    serialized_data = json.dumps(circuit)
+    data = {
+        "receiver_inputs": [enc_zero, enc_one],
+        "encrypted_rows": enc_rows_to_send
+    }
+    serialized_data = pickle.dumps(data)
 
-    print("Sending garbled circuit to receiver...")
+    print(f"[{ME}] Sending garbled circuit to receiver...")
 
     # Create a socket connection to the receiver
     with socket.create_connection((host, port)) as s:
         # Send the serialized circuit data
-        s.sendall(serialized_data.encode("utf-8"))
-    print("Garbled circuit sent.")
+        s.sendall(serialized_data)
+    print(f"[{ME}] Garbled circuit sent.")
+
 
 if __name__ == "__main__":
-    input_A = int(input("Enter the value for input A (0 or 1): "))
-    input_B = int(input("Enter the value for input B (0 or 1): "))
-    send_garbled_circuit(input_A, input_B)
+    run(int(input("Enter the value for the sender's input (0 or 1): ")))
+

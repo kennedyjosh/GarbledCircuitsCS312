@@ -3,6 +3,7 @@ from cryptography.fernet import Fernet, InvalidToken
 import otc
 import pickle
 import socket
+import base64
 
 
 # ID for printed logs coming from this file
@@ -23,10 +24,10 @@ def try_decrypt(enc_input, enc_rows):
         the decrypted output if one of the rows can be successfully decrypted, None otherwise
     """
     print(f"[{ME}] Trying to decrypt one of these encrypted rows: {[r[-SUFFIX_LEN:] for r in enc_rows]}")
-    for enc_row in enc_rows:
+    for row in range(len(enc_rows)):
         try:
-            output = Fernet(enc_input).decrypt(enc_row)
-            print(f"[{ME}] Successful decryption of row: {enc_row[-SUFFIX_LEN:]}")
+            output = Fernet(enc_input[row]).decrypt(enc_rows[row])
+            print(f"[{ME}] Successful decryption of row: {enc_rows[row][-SUFFIX_LEN:]}")
             return output
         except InvalidToken:
             continue
@@ -67,27 +68,49 @@ def run(receiver_input, host="localhost", port=9999):
 
             # Receive the inputs and the garbled circuit from the sender
             # Receiver now has enough info to decrypt both
+                    # data = b''
+        # while True:
+        #     packet = server.recv(4096)
+        #     if not packet: break
+        #     data += packet
+        # data = pickle.loads(data)
+
             serialized_data = b''
-            while serialized_data == b'':
-                serialized_data = connection.recv(4096)
+            while True:
+                packet = connection.recv(4096)
+                if not packet: break
+                serialized_data += packet
             data = pickle.loads(serialized_data)
             garbled_circuit = data["garbled_circuit"]
             # otc only allows the inputs to be of length 16, but the Fernet keys are length 44
             # so we will have to reconstruct them after decryption
-            inputs = (data[1], data[2], data[3])
+            inputs = [data[1], data[2], data[3]]
             input_size = data["input_size"]
             print(f"[{ME}] Received and parsed inputs and garbled circuit from sender")
 
             # Decrypt the receiver input and reconstruct the full key
-            enc_input = b''
-            for sub_input in inputs:
-                sub_enc_input = r.elect(pub_key, receiver_input, *sub_input)
-                enc_input += sub_enc_input
-            enc_input = enc_input[:input_size]
-            print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
+            all_enc_input = []
+            for i in range(len(inputs[0])):
+                enc_input = b''
+                sub_enc_input1 = r.elect(pub_key, receiver_input, *inputs[0][i])
+                sub_enc_input2 = r.elect(pub_key, receiver_input, *inputs[0][i])
+                sub_enc_input3 = r.elect(pub_key, receiver_input, *inputs[0][i])
+                enc_input = sub_enc_input1 + sub_enc_input2 + sub_enc_input3
+                enc_input = enc_input[:input_size]
+                print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
+                all_enc_input.append(enc_input)
+
+            
+            # for sub_input in inputs:
+            #     enc_input = b''
+            #     for sub_sub_input in range(1, 4):
+            #         sub_enc_input = r.elect(pub_key, receiver_input, *sub_input)
+            #         enc_input += sub_enc_input
+            # enc_input = enc_input[:input_size]
+            # print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
 
             # Try to decrypt from the rows the sender sent
-            output = try_decrypt(enc_input, garbled_circuit)
+            output = try_decrypt(all_enc_input, garbled_circuit)
             if output is None:
                 print(f"[{ME}] Failed to decrypt")
             else:

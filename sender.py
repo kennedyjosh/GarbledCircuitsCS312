@@ -50,6 +50,7 @@ def run(sender_input, host="localhost", port=9999):
         enc_2 = []
         enc_3 = []
         for index, (enc_zero, enc_one, enc_gate) in enumerate(garbled_circuit):
+            new_gate = []
             enc_sender_input = enc_zero if sender_input == 0 else enc_one
             for enc_row in enc_gate:
                 try:
@@ -57,10 +58,11 @@ def run(sender_input, host="localhost", port=9999):
                     enc_2.append(s.reply(data["selection"], enc_zero[16:32], enc_one[16:32]))
                     enc_3.append(s.reply(data["selection"], enc_zero[32:] + b'1234', enc_one[32:] + b'1234'))
                     partial_decryption = Fernet(enc_sender_input).decrypt(enc_row)
-                    enc_rows_to_send.append(partial_decryption)
+                    new_gate.append(partial_decryption)
                     print(f"[{ME}] Successful partial decryption of row {enc_row[-SUFFIX_LEN:]} to {partial_decryption[-SUFFIX_LEN:]}")
                 except InvalidToken:
                     continue
+            enc_rows_to_send.append(new_gate)
 
 
         # # Receive response from receiver with their requested input

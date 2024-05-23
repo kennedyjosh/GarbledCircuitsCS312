@@ -34,7 +34,7 @@ def generate_truth_table(gate_type):
     elif gate_type == "XOR":
         return [(0, 0, 0), (0, 1, 1), (1, 0, 1), (1, 1, 0)]
     elif gate_type == "NOT":
-        return [(0, None, 1), (1, None, 0)]
+        return [(0, 0, 1), (1, 1, 0)]
     else:
         raise ValueError("Unsupported gate type:")
     
@@ -78,9 +78,7 @@ def encrypt_gate(truth_table: list[tuple]):
     # Iterate over and encrypt each row in the truth table
     for wa, wb, wc in truth_table:
         enc_a = encrypted_inputs[wa]
-        enc_b = encrypted_inputs[wa]
-        if wb:
-            enc_b = encrypted_inputs[wb]
+        enc_b = encrypted_inputs[wb]
         enc_row = encrypt(enc_a, enc_b, bytes(str(wc), encoding="utf-8"))
         encrypted_gate.append(enc_row)
         print(f"[{ME}] Encrypting inputs wa={wa}, wb={wb} | encrypted output row: {enc_row[-SUFFIX_LEN:]}")

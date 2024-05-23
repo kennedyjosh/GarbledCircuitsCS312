@@ -24,26 +24,34 @@ def try_decrypt(enc_input, enc_rows):
         the decrypted output if one of the rows can be successfully decrypted, None otherwise
     """
     # print(f"[{ME}] Trying to decrypt one of these encrypted rows: {[r[-SUFFIX_LEN:] for r in enc_rows]}")
-    # for row in range(len(enc_input)):
-    #     for row2 in range(len(enc_rows)):
-    #         try:
-    #             print(Fernet(enc_input[row]).decrypt(enc_rows[row2]))
-    #             output = Fernet(enc_input[row]).decrypt(enc_rows[row2])
-
-    #             print(f"[{ME}] Successful decryption of row: {enc_rows[row][-SUFFIX_LEN:]}")
-    #             return output
-    #         except InvalidToken:
-    #             continue
-
     for row in range(len(enc_input)):
-        try:
-            print(Fernet(enc_input[row]).decrypt(enc_rows))
-            output = Fernet(enc_input[row]).decrypt(enc_rows)
+        for row2 in range(len(enc_rows)):
+            try:
+                output = Fernet(enc_input[row]).decrypt(enc_rows[row2])
 
-            print(f"[{ME}] Successful decryption of row: {enc_input[-SUFFIX_LEN:]}")
-            return output
-        except InvalidToken:
-            continue
+                print(f"[{ME}] Successful decryption of row: {enc_rows[row2][-SUFFIX_LEN:]}")
+                return output
+            except InvalidToken:
+                continue
+
+    # for row in range(len(enc_rows)):
+    #     try:
+    #         print(Fernet(enc_input).decrypt(enc_rows[row]))
+    #         output = Fernet(enc_input).decrypt(enc_rows[row])
+
+    #         print(f"[{ME}] Successful decryption of row: {enc_input[-SUFFIX_LEN:]}")
+    #         return output
+    #     except InvalidToken:
+    #         continue
+    # for row in range(len(enc_input)):
+    #     try:
+    #         print(Fernet(enc_input[row]).decrypt(enc_rows))
+    #         output = Fernet(enc_input[row]).decrypt(enc_rows)
+
+    #         print(f"[{ME}] Successful decryption of row: {enc_input[-SUFFIX_LEN:]}")
+    #         return output
+    #     except InvalidToken:
+    #         continue
     return None
 
     
@@ -100,6 +108,7 @@ def run(receiver_input, host="localhost", port=9999):
             inputs = [data[1], data[2], data[3]]
             input_size = data["input_size"]
             print(f"[{ME}] Received and parsed inputs and garbled circuit from sender")
+            print(garbled_circuit)
 
             # Decrypt the receiver input and reconstruct the full key
             all_enc_input = []
@@ -110,7 +119,6 @@ def run(receiver_input, host="localhost", port=9999):
                 sub_enc_input3 = r.elect(pub_key, receiver_input, *inputs[2][i])
                 enc_input = sub_enc_input1 + sub_enc_input2 + sub_enc_input3
                 enc_input = enc_input[:input_size]
-                # print(enc_input)
                 print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
                 all_enc_input.append(enc_input)
 
@@ -128,12 +136,14 @@ def run(receiver_input, host="localhost", port=9999):
             # all_enc_rows = []
             # for gate_tuple in garbled_circuit:
             #     all_enc_rows.extend(gate_tuple[-1]) 
+
+            output = None
             
             for i in garbled_circuit:
                 o = try_decrypt(all_enc_input, i)
                 if o:
                     output = o
-            # output = o
+            # # output = o
             # print(len(all_enc_input))
             # print(len(garbled_circuit))
             # output = try_decrypt(all_enc_input, garbled_circuit)

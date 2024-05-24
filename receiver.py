@@ -40,7 +40,7 @@ def _solve_circuit(gate, garbled_circuit):
     # Base case: this gate has a value
     if "value" in garbled_circuit[gate]:
         value = garbled_circuit[gate]["value"]
-        print(ME + f"Gate {gate} already has a value: {value}")
+        print(ME + f"Gate {gate} already has a value: {value[-SUFFIX_LEN:]}")
         return value
     # Otherwise, try to solve gates needed to solve this one
     assert "inputs" in garbled_circuit[gate], f"Gate {gate} has no value and does not list inputs"
@@ -136,8 +136,8 @@ def run(receiver_input, host="localhost", port=9999, store_output=None):
                     break
             assert found == [True, True], "Decrypted keys were not found in garbled circuit"
             print(ME + f"My input is {receiver_input}")
-            print(ME + f"Chose value for bit 0: {key2}")
-            print(ME + f"Chose value for bit 1: {key3}")
+            print(ME + f"Chose value for bit 0: {key2[-SUFFIX_LEN:]}")
+            print(ME + f"Chose value for bit 1: {key3[-SUFFIX_LEN:]}")
 
             print("Garbled circuit just before solving:")
             CPP(indent=1).pprint(garbled_circuit)

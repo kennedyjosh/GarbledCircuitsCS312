@@ -1,15 +1,16 @@
 # receiver.py (Party P_B)
 from cryptography.fernet import Fernet, InvalidToken
-import otc
+from oblivious_transfer.ot import Bob
 import pickle
+from pprint import pprint
 import socket
 import struct
-import base64
 
 # ID for printed logs coming from this file
-ME = "RECEIVER"
+ME = "[RECEIVER] "
 # For long encrypted values, just print the suffix of defined length
 SUFFIX_LEN = 10
+
 
 def try_decrypt(enc_input, enc_rows):
     """
@@ -36,18 +37,61 @@ def try_decrypt(enc_input, enc_rows):
             continue
     return None
 
-def unpad_input(input_data):
-    """
-    Remove padding from each element in the input tuple.
-    """
-    return tuple(element.rstrip(b'0') for element in input_data if isinstance(element, bytes))
 
-# Ensure the key is a valid base64-encoded 32-byte key
-def ensure_fernet_key(key):
-    padded_key = key.ljust(32, b'\0')[:32]
-    encoded_key = base64.urlsafe_b64encode(padded_key)
-    print(f"[{ME}] Constructed Fernet key: {encoded_key}")
-    return encoded_key
+def solve_circuit(garbled_circuit):
+    """
+    Approach: start from the gate with the highest value label, assuming that is the last gate.
+              Recursively decrypt the gates that are its inputs.
+    Args:
+        garbled_circuit: garbled circuit sent by receiver (more info in Circuit.garble)
+    Returns:
+        decrypted output
+    """
+    last_gate = max(garbled_circuit.keys())
+    print(ME + f"Starting to solve circuit from gate {last_gate}")
+    return _solve_circuit(last_gate, garbled_circuit)
+
+
+def _solve_circuit(gate, garbled_circuit):
+    """
+    Private recursive function that will recursively solve all gates
+    Args:
+        gate: label for the gate to solve in this step
+        garbled_circuit: garbled circuit sent by receiver (more info in Circuit.garble)
+    Returns:
+        decrypted output of the gate
+    """
+    # Base case: gate is None (this happens in case of 'not' gate which requires only 1 input
+    if gate is None:
+        return None
+    # Base case: this gate has a value
+    if "value" in garbled_circuit[gate]:
+        value = garbled_circuit[gate]["value"]
+        print(ME + f"Gate {gate} already has a value: {value}")
+        return value
+    # Otherwise, try to solve gates needed to solve this one
+    assert "inputs" in garbled_circuit[gate], f"Gate {gate} has no value and does not list inputs"
+    input1 = _solve_circuit(garbled_circuit[gate]["inputs"][0], garbled_circuit)
+    input2 = _solve_circuit(garbled_circuit[gate]["inputs"][1], garbled_circuit)
+    # Use these inputs to solve for an encrypted row
+    value = None
+    for row in garbled_circuit[gate]["rows"]:
+        try:
+            # input2 may not exist if we are decrypting the not gate
+            if input2:
+                value = Fernet(input2).decrypt(Fernet(input1).decrypt(row))
+                break
+            else:
+                value = Fernet(input1).decrypt(row)
+                break
+        except InvalidToken:
+            value = None
+    assert value is not None, f"Unable to decrypt gate {gate}"
+    # Insert this value into the garbled circuit, so we don't need to re-calculate later
+    garbled_circuit[gate]["value"] = value
+    print(ME + f"Decrypted gate {gate}: {value}")
+    return value
+
 
 # Receive garbled circuit from sender and evaluate
 def run(receiver_input, host="localhost", port=9999):
@@ -59,34 +103,38 @@ def run(receiver_input, host="localhost", port=9999):
         host (str): The host address to listen on. Defaults to "localhost".
         port (int): The port number to listen on. Defaults to 9999.
     """
-    print(f"[{ME}] Waiting to receive connection from sender...")
+    assert 0 <= receiver_input <= 3 and int(receiver_input) == receiver_input, \
+        "Input must be a positive integer less than 4"
+
+    print(ME + f"Waiting to receive connection from sender...")
     # Create a server socket and start listening for connections
     with socket.create_server((host, port)) as server:
         # Accept initial connection from sender
         connection, _ = server.accept()
         with connection:
             # First message from sender contains the public key for OT
-            serialized_data = connection.recv(4096)
+            serialized_data = b''
+            while serialized_data == b'':
+                serialized_data = connection.recv(4096)
             data = pickle.loads(serialized_data)
-            pub_key = data["pub_key"]
-            print(f"[{ME}] Public key received.")
+            print(ME + f"Received first message from sender")
 
-            # Initialize OT and respond to sender with desired input
-            # Note that sender will not be able to deduce the input the receivers wants due to OT properties
-            r = otc.receive()
-            input_selection = r.query(pub_key, receiver_input)
-
-            # Send this response back to the sender
-            serialized_data = pickle.dumps({"selection": input_selection})
+            # Bob must choose 2 keys for the 2 bits in his number
+            # bit1 * 2^1 + bit2 * 2^0 = receiver_input
+            bit1 = 1 if receiver_input >= 2 else 0
+            bit2 = (receiver_input & 0b1) + 2
+            bob = Bob([bit1, bit2])
+            f = bob.setup(data["pubkey"]["e"], data["pubkey"]["n"], data["hashes"], data["secret_length"])
+            serialized_data = pickle.dumps({"f": f})
             connection.sendall(serialized_data)
-            print(f"[{ME}] Selection ({receiver_input}) sent")
+            print(ME + f"Sending selections to the sender...")
 
             # Receive the size of the incoming data first
             raw_msglen = connection.recv(4)
             if not raw_msglen:
                 raise ValueError("Invalid message length received")
             msglen = struct.unpack('!I', raw_msglen)[0]
-            
+
             # Receive the actual data based on the length
             serialized_data = b''
             while len(serialized_data) < msglen:
@@ -94,36 +142,31 @@ def run(receiver_input, host="localhost", port=9999):
                 if not packet:
                     break
                 serialized_data += packet
-
-            if len(serialized_data) < msglen:
-                raise ValueError("Incomplete data received")
+            print(ME + "Received garbled circuit from the sender")
 
             data = pickle.loads(serialized_data)
+            G = data["G"]
             garbled_circuit = data["garbled_circuit"]
-            inputs = data["inputs"]
-            input_size = data["input_size"]
-            print(f"[{ME}] Received and parsed inputs and garbled circuit from sender")
+            key2, key3 = bob.receive(G)
+            # Find where these keys belong in the garbled circuit
+            found = [False, False]
+            for gate_label in garbled_circuit:
+                if "value" in garbled_circuit[gate_label]:
+                    if key2 in garbled_circuit[gate_label]["value"]:
+                        garbled_circuit[gate_label]["value"] = key2
+                        found[0] = True
+                    elif key3 in garbled_circuit[gate_label]["value"]:
+                        garbled_circuit[gate_label]["value"] = key3
+                        found[1] = True
+                if found == [True, True]:
+                    break
+            assert found == [True, True], "Decrypted keys were not found in garbled circuit"
+            print(ME + f"Input keys successfully decrypted")
 
-            # Decrypt the receiver input and reconstruct the full key
-            enc_input = b''
-            for sub_input in inputs:
-                sub_enc_input = r.elect(pub_key, receiver_input, *sub_input)
-                if isinstance(sub_enc_input, bytes):
-                    enc_input += unpad_input((sub_enc_input,))[0]
-                else:
-                    enc_input += sub_enc_input
-            enc_input = enc_input[:32]  # Ensure the key is exactly 32 bytes
-            enc_input = ensure_fernet_key(enc_input)
-            print(f"[{ME}] My encrypted input: {enc_input[-SUFFIX_LEN:]}")
+            print("Garbled circuit just before solving:")
+            pprint(garbled_circuit, indent=1)
 
-            # Extract encrypted rows from garbled circuit and try to decrypt
-            all_enc_rows = []
-            for gate_tuple in garbled_circuit:
-                all_enc_rows.extend(gate_tuple[-1])  # Extracting the last element which contains encrypted rows
+            # Try to solve the circuit
+            output = solve_circuit(garbled_circuit)
+            print(f"[{ME}] Decrypted output: {output}")
 
-            # Try to decrypt from the rows the sender sent
-            output = try_decrypt(enc_input, all_enc_rows)
-            if output is None:
-                print(f"[{ME}] Failed to decrypt")
-            else:
-                print(f"[{ME}] Decrypted output: {output}")

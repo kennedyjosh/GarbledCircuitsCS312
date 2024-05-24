@@ -1,4 +1,4 @@
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 import random
 from queue import PriorityQueue
 

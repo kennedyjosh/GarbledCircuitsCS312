@@ -1,5 +1,4 @@
 from common import SUFFIX_LEN
-from copy import deepcopy
 import pprint
 
 class CustomPrettyPrinter(pprint.PrettyPrinter):

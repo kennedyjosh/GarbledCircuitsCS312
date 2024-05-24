@@ -177,6 +177,7 @@ def encrypt_gate(truth_table: list[tuple], enc_zero_a: bytes = None, enc_one_a: 
         enc_one_b: input key for 1 for the second wire
         encrypted_rows: A list of encrypted gate outputs for all possible combinations of input keys.
     """
+    print(f"Encrypting truth table: {truth_table}")
     # Initialize some variables; a is the first wire, b is the second wire
     enc_zero_a = Fernet.generate_key() if enc_zero_a is None else enc_zero_a
     enc_one_a = Fernet.generate_key() if enc_one_a is None else enc_one_a

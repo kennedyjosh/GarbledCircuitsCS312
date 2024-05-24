@@ -1,16 +1,14 @@
 # sender.py (Party P_A)
-from cryptography.fernet import Fernet, InvalidToken
+from common import SUFFIX_LEN
 from oblivious_transfer.ot import Alice
 import pickle
-from pprint import pprint
+from pprint_custom import CustomPrettyPrinter as CPP
 import socket
 from circuit import get_comparator_circuit, Circuit
 import struct
 
 # ID for printed logs coming from this file
 ME = "[SENDER] "
-# For long encrypted values, just print the suffix of defined length
-SUFFIX_LEN = 10
 
 
 def run(sender_input, host="localhost", port=9999):
@@ -29,14 +27,14 @@ def run(sender_input, host="localhost", port=9999):
     circuit = Circuit(gates)
     garbled_circuit = circuit.garble()
     print("Initial garbled circuit:")
-    pprint(garbled_circuit, indent=1)
+    CPP(indent=1).pprint(garbled_circuit)
 
     # Choose sender's input w0,w1 where w0 ** 2^1 + w1 ** 2^0 == input
     print(ME + f"My input is {sender_input}")
     garbled_circuit[0]["value"] = garbled_circuit[0]["value"][int(sender_input >= 2)]
-    print(ME + f"Chose value for bit 0: {garbled_circuit[0]['value']}")
+    print(ME + f"Chose value for bit 0: {garbled_circuit[0]['value'][-SUFFIX_LEN:]}")
     garbled_circuit[1]["value"] = garbled_circuit[1]["value"][sender_input & 0b1]
-    print(ME + f"Chose value for bit 1: {garbled_circuit[1]['value']}")
+    print(ME + f"Chose value for bit 1: {garbled_circuit[1]['value'][-SUFFIX_LEN:]}")
 
     print(ME + "Initiating contact with the receiver...")
 

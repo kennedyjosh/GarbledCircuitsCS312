@@ -1,41 +1,14 @@
 # receiver.py (Party P_B)
+from common import SUFFIX_LEN
 from cryptography.fernet import Fernet, InvalidToken
 from oblivious_transfer.ot import Bob
 import pickle
-from pprint import pprint
+from pprint_custom import CustomPrettyPrinter as CPP
 import socket
 import struct
 
 # ID for printed logs coming from this file
 ME = "[RECEIVER] "
-# For long encrypted values, just print the suffix of defined length
-SUFFIX_LEN = 10
-
-
-def try_decrypt(enc_input, enc_rows):
-    """
-    Try and decrypt a row using the receiver's input.
-
-    Args:
-        enc_input: the encrypted input key which should decrypt a single row
-        enc_rows: encrypted rows to try and decrypt
-
-    Returns:
-        the decrypted output if one of the rows can be successfully decrypted, None otherwise
-    """
-    print(f"[{ME}] Trying to decrypt one of these encrypted rows: {[r[-SUFFIX_LEN:] for r in enc_rows]}")
-    for enc_row in enc_rows:
-        if not isinstance(enc_row, bytes):
-            print(f"[{ME}] Invalid type for enc_row: {type(enc_row)}")
-            continue
-        try:
-            output = Fernet(enc_input).decrypt(enc_row)
-            print(f"[{ME}] Successful decryption of row: {enc_row[-SUFFIX_LEN:]} to {output[-SUFFIX_LEN:]}")
-            return output
-        except InvalidToken:
-            print(f"[{ME}] Invalid token for row: {enc_row[-SUFFIX_LEN:]}")
-            continue
-    return None
 
 
 def solve_circuit(garbled_circuit):
@@ -89,12 +62,12 @@ def _solve_circuit(gate, garbled_circuit):
     assert value is not None, f"Unable to decrypt gate {gate}"
     # Insert this value into the garbled circuit, so we don't need to re-calculate later
     garbled_circuit[gate]["value"] = value
-    print(ME + f"Decrypted gate {gate}: {value}")
+    print(ME + f"Decrypted gate {gate} at row = {row[-SUFFIX_LEN:]}: {value[-SUFFIX_LEN:]}")
     return value
 
 
 # Receive garbled circuit from sender and evaluate
-def run(receiver_input, host="localhost", port=9999):
+def run(receiver_input, host="localhost", port=9999, store_output=None):
     """
     Receives a garbled circuit from the sender and evaluates it.
 
@@ -106,12 +79,13 @@ def run(receiver_input, host="localhost", port=9999):
     assert 0 <= receiver_input <= 3 and int(receiver_input) == receiver_input, \
         "Input must be a positive integer less than 4"
 
-    print(ME + f"Waiting to receive connection from sender...")
     # Create a server socket and start listening for connections
     with socket.create_server((host, port)) as server:
+        print(ME + f"Waiting to receive connection from sender...")
         # Accept initial connection from sender
         connection, _ = server.accept()
         with connection:
+            print(ME + "Connected with sender")
             # First message from sender contains the public key for OT
             serialized_data = b''
             while serialized_data == b'':
@@ -164,9 +138,13 @@ def run(receiver_input, host="localhost", port=9999):
             print(ME + f"Input keys successfully decrypted")
 
             print("Garbled circuit just before solving:")
-            pprint(garbled_circuit, indent=1)
+            CPP(indent=1).pprint(garbled_circuit)
 
             # Try to solve the circuit
             output = solve_circuit(garbled_circuit)
             print(f"[{ME}] Decrypted output: {output}")
+
+            # Store output (used to verify solution in tests)
+            if store_output is not None:
+                store_output[0] = output
 

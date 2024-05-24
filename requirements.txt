@@ -5,9 +5,15 @@ cffi==1.16.0
 cryptography==42.0.7
 fe25519==1.5.0
 ge25519==1.5.1
+iniconfig==2.0.0
 oblivious==6.0.0
-oblivious_transfer @ git+https://github.com/kennedyjosh/oblivious-transfer@master
+oblivious_transfer @ git+https://github.com/kennedyjosh/oblivious-transfer@025b57f68ba4417bd419a96bb93c58c1e3b9c46c
+packaging==24.0
 parts==1.7.0
+pluggy==1.5.0
+pyasn1==0.6.0
 pycparser==2.22
+pytest==8.2.1
 rbcl==0.4.2
+rsa==4.9
 six==1.16.0

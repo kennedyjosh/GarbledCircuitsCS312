@@ -135,7 +135,9 @@ def run(receiver_input, host="localhost", port=9999, store_output=None):
                 if found == [True, True]:
                     break
             assert found == [True, True], "Decrypted keys were not found in garbled circuit"
-            print(ME + f"Input keys successfully decrypted")
+            print(ME + f"My input is {receiver_input}")
+            print(ME + f"Chose value for bit 0: {key2}")
+            print(ME + f"Chose value for bit 1: {key3}")
 
             print("Garbled circuit just before solving:")
             CPP(indent=1).pprint(garbled_circuit)

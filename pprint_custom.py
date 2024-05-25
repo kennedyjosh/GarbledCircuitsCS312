@@ -3,7 +3,7 @@ import pprint
 
 class CustomPrettyPrinter(pprint.PrettyPrinter):
     """
-    Overrides part of the PrettyPrinter to shorten long strings in the object
+    Overrides part of the PrettyPrinter to shorten long byte strings in the object
     """
     def _format(self, object, *args, **kwargs):
         if isinstance(object, bytes):

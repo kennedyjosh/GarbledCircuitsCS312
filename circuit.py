@@ -131,7 +131,7 @@ class Circuit:
 
 def get_comparator_circuit():
     # this circuit will compare two 2-bit inputs a, b, and return 1 a < b
-    # Inputs are 0-3, output is 9
+    # Inputs are 0-3, output is 12
     return [
         Gate("NOT", 0, None, 4),
         Gate("AND", 2, 4, 5),  # b1 & a1'

@@ -19,6 +19,8 @@ class Gate:
     def get_truth_table(self):
         if self.type == "AND":
             return [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 1)]
+        elif self.type == "OR":
+            return [(0, 0, 0), (0, 1, 1), (1, 0, 1), (1, 1, 1)]
         elif self.type == "XNOR":
             return [(0, 0, 1), (0, 1, 0), (1, 0, 0), (1, 1, 1)]
         elif self.type == "XOR":
@@ -58,8 +60,8 @@ class Circuit:
             3. Use the encrypted inputs for this gate as the output for the neighbor gates
             4. Evaluate steps 2 and 3 for all neighbor gates
 
-        Essentially, consider the circuit as a tree, and we will encrypt in a breadth-first manner
-        from the final output layer to the initial input layers
+        Essentially, consider the circuit as a directed acyclic graph, and we will encrypt
+        in a breadth-first approach from the final output node to the initial input nodes
 
         Returns:
             garbled_circuit: a dictionary where the key is the gate label and the value is another
@@ -79,9 +81,13 @@ class Circuit:
             if curr_label not in self.gates:
                 # Store the zero and one keys at this label's index in the garbled circuit dict
                 garbled_circuit[curr_label] = {"value": (out_zero, out_one)}
+                enc_outputs[curr_label] = (out_zero, out_one)
                 continue
             else:
                 curr_gate = self.gates[curr_label]
+            if curr_label in enc_outputs:
+                assert enc_outputs[curr_label] == (out_zero, out_one), \
+                    f"Gate {curr_label} was assigned different output keys"
             enc_outputs[curr_label] = (out_zero, out_one)
 
             # Check if either of the inputs have output values already, use those if so
@@ -117,6 +123,7 @@ class Circuit:
                 if input is not None and input not in visited:
                     visited.add(input)
                     pq.put((level + 1, input, zero, one))
+                    enc_outputs[input] = (zero, one)
 
         self.garbled = garbled_circuit
         return garbled_circuit
@@ -126,12 +133,15 @@ def get_comparator_circuit():
     # this circuit will compare two 2-bit inputs a, b, and return 1 a < b
     # Inputs are 0-3, output is 9
     return [
-        Gate("NOT", 0, output=4),
-        Gate("AND", 2, 4, output=5),
-        Gate("XNOR", 1, 5, output=6),
-        Gate("XOR", 3, 5, output=7),
-        Gate("AND", 6, 7, output=8),
-        Gate("XOR", 5, 8, output=9)
+        Gate("NOT", 0, None, 4),
+        Gate("AND", 2, 4, 5),  # b1 & a1'
+        Gate("AND", 3, 2, 6),
+        Gate("NOT", 1, None, 7),
+        Gate("AND", 6, 7, 8),  # b0 & b1 & a0'
+        Gate("AND", 4, 7, 9),
+        Gate("AND", 9, 3, 10),  # a1' & a0' & b0
+        Gate("OR", 5, 8, 11),
+        Gate("OR", 11, 10, 12)  # final result
     ]
 
 
@@ -183,6 +193,9 @@ def encrypt_gate(truth_table: list[tuple], enc_zero_a: bytes = None, enc_one_a: 
     enc_one_a = Fernet.generate_key() if enc_one_a is None else enc_one_a
     enc_zero_b = Fernet.generate_key() if enc_zero_b is None else enc_zero_b
     enc_one_b = Fernet.generate_key() if enc_one_b is None else enc_one_b
+    print(f"Encrypted keys:")
+    print(f"\t0a = {enc_zero_a[-SUFFIX_LEN:]}\n\t1a = {enc_one_a[-SUFFIX_LEN:]}")
+    print(f"\t0b = {enc_zero_b[-SUFFIX_LEN:]}\n\t1b = {enc_one_b[-SUFFIX_LEN:]}")
     encrypted_rows = []  # holds each encrypted row of truth table
     # Iterate over and encrypt each row in the truth table
     for row in truth_table:

@@ -123,21 +123,21 @@ def run(receiver_input, host="localhost", port=9999, store_output=None):
             garbled_circuit = data["garbled_circuit"]
             key2, key3 = bob.receive(G)
             # Find where these keys belong in the garbled circuit
+            print(ME + f"My input is {receiver_input}")
             found = [False, False]
             for gate_label in garbled_circuit:
                 if "value" in garbled_circuit[gate_label]:
                     if key2 in garbled_circuit[gate_label]["value"]:
+                        print(ME + f"Chose value for bit 0: {key2[-SUFFIX_LEN:]}")
                         garbled_circuit[gate_label]["value"] = key2
                         found[0] = True
                     elif key3 in garbled_circuit[gate_label]["value"]:
+                        print(ME + f"Chose value for bit 1: {key3[-SUFFIX_LEN:]}")
                         garbled_circuit[gate_label]["value"] = key3
                         found[1] = True
                 if found == [True, True]:
                     break
             assert found == [True, True], "Decrypted keys were not found in garbled circuit"
-            print(ME + f"My input is {receiver_input}")
-            print(ME + f"Chose value for bit 0: {key2[-SUFFIX_LEN:]}")
-            print(ME + f"Chose value for bit 1: {key3[-SUFFIX_LEN:]}")
 
             print("Garbled circuit just before solving:")
             CPP(indent=1).pprint(garbled_circuit)

@@ -1,22 +1,15 @@
 # sender.py (Party P_A)
-from cryptography.fernet import Fernet, InvalidToken
-import otc
+from common import SUFFIX_LEN
+from oblivious_transfer.ot import Alice
 import pickle
-import random
+from pprint_custom import CustomPrettyPrinter as CPP
 import socket
-from circuit import define_circuit, garble_circuit
+from circuit import get_comparator_circuit, Circuit
 import struct
 
 # ID for printed logs coming from this file
-ME = "SENDER"
-# For long encrypted values, just print the suffix of defined length
-SUFFIX_LEN = 10
+ME = "[SENDER] "
 
-def pad_input(input_data, size=32):
-    """
-    Pad each element in the input tuple to the specified size.
-    """
-    return tuple(element.ljust(size, b'0') for element in input_data if isinstance(element, bytes))
 
 def run(sender_input, host="localhost", port=9999):
     """
@@ -27,56 +20,54 @@ def run(sender_input, host="localhost", port=9999):
         host (str): The host address to listen on. Defaults to "localhost".
         port (int): The port number to listen on. Defaults to 9999.
     """
+    assert 0 <= sender_input <= 3 and int(sender_input) == sender_input, \
+        "Input must be a positive integer less than 4"
 
-    circuit_definition = define_circuit()
-    garbled_circuit = garble_circuit(circuit_definition)
+    gates = get_comparator_circuit()
+    circuit = Circuit(gates)
+    garbled_circuit = circuit.garble()
+    print("Initial garbled circuit:")
+    CPP(indent=1).pprint(garbled_circuit)
 
-    s = otc.send()
+    # Choose sender's input w0,w1 where w0 ** 2^1 + w1 ** 2^0 == input
+    print(ME + f"My input is {sender_input}")
+    garbled_circuit[0]["value"] = garbled_circuit[0]["value"][int(sender_input >= 2)]
+    print(ME + f"Chose value for bit 0: {garbled_circuit[0]['value'][-SUFFIX_LEN:]}")
+    garbled_circuit[1]["value"] = garbled_circuit[1]["value"][sender_input & 0b1]
+    print(ME + f"Chose value for bit 1: {garbled_circuit[1]['value'][-SUFFIX_LEN:]}")
 
-    print(f"[{ME}] Initiating contact with the receiver...")
+    print(ME + "Initiating contact with the receiver...")
 
     # Create a socket connection to the receiver
     with socket.create_connection((host, port)) as server:
 
-        # Send the public key to initiate OT
-        serialized_data = pickle.dumps({"pub_key": s.public})
+        # Send first set of data for OT
+        # Allow receiver to choose 2 inputs, 1 from the first 2 and 1 from the last 2
+        alice = Alice([garbled_circuit[2]["value"][0], garbled_circuit[2]["value"][1],
+                       garbled_circuit[3]["value"][0], garbled_circuit[3]["value"][1]], 2)
+        data = alice.setup()
+        serialized_data = pickle.dumps(data)
+        print(ME + f"Sending initial OT data to the receiver...")
         server.sendall(serialized_data)
 
-        # Receive response from receiver with their requested input
-        # Note that sender cannot deduce which input the receiver selected due to OT properties
+        # Get OT message back from Bob and send him the final info
         serialized_data = b''
         while serialized_data == b'':
             serialized_data = server.recv(4096)
-    
-        # Reply with both inputs, only one of which the receiver will be able to decrypt
-        # Since this is the last message, also send the garbled circuit
         data = pickle.loads(serialized_data)
-
-        inputs = []
-        for gate, ot_enc_zero, ot_enc_one, enc_zero, enc_one, _ in garbled_circuit:
-            inputs.append(s.reply(data["selection"], ot_enc_zero, ot_enc_one))
-
-        enc_rows_to_send = []
-        for gate, ot_enc_zero, ot_enc_one, enc_zero, enc_one, enc_gate in garbled_circuit:
-            enc_sender_input = enc_zero if sender_input == 0 else enc_one
-            for enc_row in enc_gate:
-                try:
-                    partial_decryption = Fernet(enc_sender_input).decrypt(enc_row)
-                    enc_rows_to_send.append(partial_decryption)
-                    print(f"[{ME}] Successful partial decryption of row {enc_row[-SUFFIX_LEN:]} to {partial_decryption[-SUFFIX_LEN:]}")
-                except InvalidToken:
-                    continue
-
-        padded_inputs = [pad_input(enc_input) for enc_input in inputs]
+        print(ME + f"Received selection from receiver")
+        f = data["f"]
+        G = alice.transmit(f)
         data = {
-            "inputs": padded_inputs,
-            "garbled_circuit": garbled_circuit,
-            "input_size": 44
+            "G": G,
+            "garbled_circuit": garbled_circuit
         }
+        print(ME + "Sending final msg for OT and the garbled circuit...")
         serialized_data = pickle.dumps(data)
         
         # Send data length first
         server.sendall(struct.pack('!I', len(serialized_data)))
         # Then send actual data
         server.sendall(serialized_data)
-        print(f"[{ME}] Garbled circuit and receiver inputs sent.")
+        print(ME + "Done")
+

@@ -1,3 +1,4 @@
+# run_garbled_circuit.py
 import receiver
 import sender
 from threading import Thread

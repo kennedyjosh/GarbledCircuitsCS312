@@ -1,3 +1,3 @@
-# For constant used across files
+# common.py
 
 SUFFIX_LEN = 15

@@ -1,3 +1,4 @@
+# test_full.py
 import pytest
 import receiver
 import sender
@@ -9,6 +10,9 @@ testdata = [(i, j) for i in range(4) for j in range(4)]
 
 @pytest.mark.parametrize("sender_input, receiver_input", testdata)
 def test_2bit_comparator(sender_input, receiver_input):
+    """
+    End-to-end test that validates correct answers for all 2-bit values in the comparator a < b
+    """
     truth = b'1' if sender_input < receiver_input else b'0'
     output = [None]
 

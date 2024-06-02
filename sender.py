@@ -4,11 +4,27 @@ from oblivious_transfer.ot import Alice
 import pickle
 from pprint_custom import CustomPrettyPrinter as CPP
 import socket
-from circuit import get_comparator_circuit, Circuit
+from circuit import Circuit, Gate
 import struct
 
 # ID for printed logs coming from this file
 ME = "[SENDER] "
+
+
+def get_comparator_circuit():
+    # this circuit will compare two 2-bit inputs a, b, and return 1 a < b
+    # Inputs are 0-3, output is 12
+    return [
+        Gate("NOT", 0, None, 4),
+        Gate("AND", 2, 4, 5),  # b1 & a1'
+        Gate("AND", 3, 2, 6),
+        Gate("NOT", 1, None, 7),
+        Gate("AND", 6, 7, 8),  # b0 & b1 & a0'
+        Gate("AND", 4, 7, 9),
+        Gate("AND", 9, 3, 10),  # a1' & a0' & b0
+        Gate("OR", 5, 8, 11),
+        Gate("OR", 11, 10, 12)  # final result
+    ]
 
 
 def run(sender_input, host="localhost", port=9999):

@@ -1,9 +1,8 @@
+# circuit.py
+from common import SUFFIX_LEN
 from cryptography.fernet import Fernet
 import random
 from queue import PriorityQueue
-
-# For long encrypted values, just print the suffix of defined length
-SUFFIX_LEN = 10
 
 
 class Gate:
@@ -29,6 +28,55 @@ class Gate:
             return [(0, None, 1), (1, None, 0)]
         else:
             raise ValueError(f"Unsupported gate type: {self.type}")
+
+    def encrypt(self, enc_zero_a: bytes = None, enc_one_a: bytes = None,
+                      enc_zero_b: bytes = None, enc_one_b: bytes = None, out_zero: bytes = b'0',
+                      out_one: bytes = b'1'):
+        """
+        Encrypts the gate output for all possible combinations of input keys.
+
+        Args:
+            truth_table: list of tuples where each tuple in the format (input1, input2, output)
+                         describes a row in the truth table of the gate
+            enc_zero_a: input key for 0 for the first wire
+            enc_one_a: input key for 1 for the first wire
+            enc_zero_b: input key for 0 for the second wire
+            enc_one_b: input key for 1 for the second wire
+            out_zero: value to use for output of 0
+            out_one: value to use for output of 1
+
+        Returns:
+            enc_zero_a: input key for 0 for the first wire
+            enc_one_a: input key for 1 for the first wire
+            enc_zero_b: input key for 0 for the second wire
+            enc_one_b: input key for 1 for the second wire
+            encrypted_rows: A list of encrypted gate outputs for all possible combinations of input keys.
+        """
+        print(f"Encrypting truth table: {self.get_truth_table()}")
+        # Initialize some variables; a is the first wire, b is the second wire
+        enc_zero_a = Fernet.generate_key() if enc_zero_a is None else enc_zero_a
+        enc_one_a = Fernet.generate_key() if enc_one_a is None else enc_one_a
+        enc_zero_b = Fernet.generate_key() if enc_zero_b is None else enc_zero_b
+        enc_one_b = Fernet.generate_key() if enc_one_b is None else enc_one_b
+        print(f"Encrypted keys:")
+        print(f"\t0a = {enc_zero_a[-SUFFIX_LEN:]}\n\t1a = {enc_one_a[-SUFFIX_LEN:]}")
+        print(f"\t0b = {enc_zero_b[-SUFFIX_LEN:]}\n\t1b = {enc_one_b[-SUFFIX_LEN:]}")
+        encrypted_rows = []  # holds each encrypted row of truth table
+        # Iterate over and encrypt each row in the truth table
+        for row in self.get_truth_table():
+            wa, wb, wc = row
+            enc_a = enc_zero_a if wa == 0 else enc_one_a
+            enc_b = enc_zero_b if wb == 0 else enc_one_b if wb is not None else b''
+            enc_c = out_zero if wc == 0 else out_one
+            if wb is None:
+                enc_row = Fernet(enc_a).encrypt(enc_c)
+            else:
+                enc_row = Fernet(enc_a).encrypt(Fernet(enc_b).encrypt(enc_c))
+            encrypted_rows.append(enc_row)
+            print(f"Encrypting inputs wa={wa}, wb={wb}, wc={wc} | encrypted output row: {enc_row[-SUFFIX_LEN:]}")
+        # Shuffle the order of the encrypted rows, otherwise one can deduce the truth table by convention
+        random.shuffle(encrypted_rows)  # the shuffling occurs in-place
+        return enc_zero_a, enc_one_a, enc_zero_b, enc_one_b, encrypted_rows
 
 
 class Circuit:
@@ -105,13 +153,13 @@ class Circuit:
                 enc_one_b = None
 
             # Encrypt the gate
-            enc_zero_a, enc_one_a, enc_zero_b, enc_one_b, enc_rows = encrypt_gate(curr_gate.get_truth_table(),
-                                                                                  enc_zero_a=enc_zero_a,
-                                                                                  enc_one_a=enc_one_a,
-                                                                                  enc_zero_b=enc_zero_b,
-                                                                                  enc_one_b=enc_one_b,
-                                                                                  out_zero=out_zero,
-                                                                                  out_one=out_one)
+            enc_zero_a, enc_one_a, enc_zero_b, enc_one_b, enc_rows = curr_gate.encrypt(
+                                                                                   enc_zero_a=enc_zero_a,
+                                                                                   enc_one_a=enc_one_a,
+                                                                                   enc_zero_b=enc_zero_b,
+                                                                                   enc_one_b=enc_one_b,
+                                                                                   out_zero=out_zero,
+                                                                                   out_one=out_one)
             garbled_circuit[curr_label] = {
                 "inputs": [curr_gate.input1, curr_gate.input2],
                 "rows": enc_rows
@@ -127,89 +175,4 @@ class Circuit:
 
         self.garbled = garbled_circuit
         return garbled_circuit
-
-
-def get_comparator_circuit():
-    # this circuit will compare two 2-bit inputs a, b, and return 1 a < b
-    # Inputs are 0-3, output is 12
-    return [
-        Gate("NOT", 0, None, 4),
-        Gate("AND", 2, 4, 5),  # b1 & a1'
-        Gate("AND", 3, 2, 6),
-        Gate("NOT", 1, None, 7),
-        Gate("AND", 6, 7, 8),  # b0 & b1 & a0'
-        Gate("AND", 4, 7, 9),
-        Gate("AND", 9, 3, 10),  # a1' & a0' & b0
-        Gate("OR", 5, 8, 11),
-        Gate("OR", 11, 10, 12)  # final result
-    ]
-
-
-def encrypt(a: bytes, b: bytes, out: bytes):
-    """
-    Encrypts a single row in a truth table where `a` and `b` are the inputs and `out` is the output.
-    To decrypt the `enc_out` returned by this function, you would need both `a` and `b`
-
-    Args:
-        a: a 32-length key corresponding to the first input
-        b: a 32-length key corresponding to the second input
-        out: bytes representing the output (this will be the result post-decryption)
-
-    Returns:
-        enc_out: the doubly-encrypted output of the row
-    """
-    assert type(a) is bytes
-    assert type(b) is bytes
-    assert type(out) is bytes
-    return Fernet(a).encrypt(Fernet(b).encrypt(out))
-
-
-def encrypt_gate(truth_table: list[tuple], enc_zero_a: bytes = None, enc_one_a: bytes = None,
-                 enc_zero_b: bytes = None, enc_one_b: bytes = None, out_zero: bytes = b'0',
-                 out_one: bytes = b'1'):
-    """
-    Encrypts the gate output for all possible combinations of input keys.
-
-    Args:
-        truth_table: list of tuples where each tuple in the format (input1, input2, output)
-                     describes a row in the truth table of the gate
-        enc_zero_a: input key for 0 for the first wire
-        enc_one_a: input key for 1 for the first wire
-        enc_zero_b: input key for 0 for the second wire
-        enc_one_b: input key for 1 for the second wire
-        out_zero: value to use for output of 0
-        out_one: value to use for output of 1
-
-    Returns:
-        enc_zero_a: input key for 0 for the first wire
-        enc_one_a: input key for 1 for the first wire
-        enc_zero_b: input key for 0 for the second wire
-        enc_one_b: input key for 1 for the second wire
-        encrypted_rows: A list of encrypted gate outputs for all possible combinations of input keys.
-    """
-    print(f"Encrypting truth table: {truth_table}")
-    # Initialize some variables; a is the first wire, b is the second wire
-    enc_zero_a = Fernet.generate_key() if enc_zero_a is None else enc_zero_a
-    enc_one_a = Fernet.generate_key() if enc_one_a is None else enc_one_a
-    enc_zero_b = Fernet.generate_key() if enc_zero_b is None else enc_zero_b
-    enc_one_b = Fernet.generate_key() if enc_one_b is None else enc_one_b
-    print(f"Encrypted keys:")
-    print(f"\t0a = {enc_zero_a[-SUFFIX_LEN:]}\n\t1a = {enc_one_a[-SUFFIX_LEN:]}")
-    print(f"\t0b = {enc_zero_b[-SUFFIX_LEN:]}\n\t1b = {enc_one_b[-SUFFIX_LEN:]}")
-    encrypted_rows = []  # holds each encrypted row of truth table
-    # Iterate over and encrypt each row in the truth table
-    for row in truth_table:
-        wa, wb, wc = row
-        enc_a = enc_zero_a if wa == 0 else enc_one_a
-        enc_b = enc_zero_b if wb == 0 else enc_one_b if wb is not None else b''
-        enc_c = out_zero if wc == 0 else out_one
-        if wb is None:
-            enc_row = Fernet(enc_a).encrypt(enc_c)
-        else:
-            enc_row = Fernet(enc_a).encrypt(Fernet(enc_b).encrypt(enc_c))
-        encrypted_rows.append(enc_row)
-        print(f"Encrypting inputs wa={wa}, wb={wb}, wc={wc} | encrypted output row: {enc_row[-SUFFIX_LEN:]}")
-    # Shuffle the order of the encrypted rows, otherwise one can deduce the truth table by convention
-    random.shuffle(encrypted_rows)  # the shuffling occurs in-place
-    return enc_zero_a, enc_one_a, enc_zero_b, enc_one_b, encrypted_rows
 
